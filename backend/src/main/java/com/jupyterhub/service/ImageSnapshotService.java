@@ -23,6 +23,7 @@ public class ImageSnapshotService {
 
     private static final String BACKUP_DIR = "/opt/jupyterhub_prod/backups/";
     private static final String LOG_FILE = "/tmp/image_snapshot.log";
+    private volatile boolean dockerRestarting = false;
 
     // 关键镜像（系统自动恢复）及其固定备份文件名
     private static final Map<String, String> CRITICAL_IMAGES = new LinkedHashMap<>();
@@ -304,6 +305,48 @@ public class ImageSnapshotService {
         restoringImages.remove(fullName);
     }
 
+    private boolean ensureDockerRunning() {
+        String output = sshService.executeCommand("docker info 2>&1", true);
+        if (output != null && (output.contains("Server Version") || output.contains("Docker"))) {
+            return true;
+        }
+
+        if (dockerRestarting) {
+            return false;
+        }
+
+        dockerRestarting = true;
+        try {
+            appendLog("检测到 Docker 未运行，尝试重启 Docker 服务...");
+
+            sshService.executeCommand("systemctl start docker.service 2>&1");
+            Thread.sleep(3000);
+
+            output = sshService.executeCommand("docker info 2>&1", true);
+            if (output != null && (output.contains("Server Version") || output.contains("Docker"))) {
+                appendLog("Docker 服务重启成功");
+                return true;
+            }
+
+            sshService.executeCommand("systemctl start docker 2>&1");
+            Thread.sleep(3000);
+
+            output = sshService.executeCommand("docker info 2>&1", true);
+            if (output != null && (output.contains("Server Version") || output.contains("Docker"))) {
+                appendLog("Docker 服务重启成功 (systemctl start docker)");
+                return true;
+            }
+
+            appendLog("Docker 服务重启失败，无法恢复镜像");
+            return false;
+        } catch (Exception e) {
+            appendLog("Docker 服务重启异常: " + e.getMessage());
+            return false;
+        } finally {
+            dockerRestarting = false;
+        }
+    }
+
     /**
      * 检查镜像是否正在恢复中
      */
@@ -346,6 +389,12 @@ public class ImageSnapshotService {
         if (!checkBackupExists(backupFile)) {
             result.put("success", false);
             result.put("message", "备份文件不存在: " + backupPath);
+            return result;
+        }
+
+        if (!ensureDockerRunning()) {
+            result.put("success", false);
+            result.put("message", "Docker 服务未运行，已尝试重启但失败，请手动启动 Docker");
             return result;
         }
 
@@ -651,12 +700,14 @@ public class ImageSnapshotService {
      * 定时任务：每 18 秒自动检测并恢复缺失的备份镜像
      * 不受页面切换影响，后台持续运行
      */
-    @Scheduled(fixedRate = 18000) // 每 18 秒执行一次
+    @Scheduled(fixedRate = 18000)
     public void scheduledAutoRestore() {
         try {
-//            logger.info("【定时任务】开始自动检测缺失镜像...");
+            if (!ensureDockerRunning()) {
+                appendLog("【定时任务】Docker 未运行，跳过自动恢复");
+                return;
+            }
 
-            // 扫描 docker images
             String command = "docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -v '^<none>'";
             String output = sshService.executeCommand(command, true);
 
