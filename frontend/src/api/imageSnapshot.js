@@ -27,5 +27,8 @@ export const imageSnapshotApi = {
   },
   cleanDangling() {
     return api.delete('/image-snapshot/clean-dangling')
+  },
+  getDockerHealth() {
+    return api.get('/image-snapshot/docker-health')
   }
 }

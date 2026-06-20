@@ -161,6 +161,17 @@ public class ImageSnapshotController {
         }
     }
 
+    @GetMapping("/docker-health")
+    public Result getDockerHealth() {
+        try {
+            Map<String, Object> health = imageSnapshotService.getDockerHealth();
+            return Result.success(health);
+        } catch (Exception e) {
+            logger.error("获取Docker状态失败", e);
+            return Result.error("获取Docker状态失败: " + e.getMessage());
+        }
+    }
+
     @DeleteMapping("/clean-dangling")
     public Result cleanDangling() {
         try {

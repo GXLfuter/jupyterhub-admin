@@ -7,6 +7,34 @@
             <el-icon :size="20"><Monitor /></el-icon>
             <span>镜像快照管理</span>
             <el-tag v-if="showCacheData" type="info" size="small" style="margin-left: 8px;">缓存</el-tag>
+            <!-- Docker 运行状态指示器 -->
+            <el-tag
+              v-if="dockerHealth.running"
+              type="success"
+              size="small"
+              effect="light"
+              style="margin-left: 12px;"
+            >
+              Docker 正常运行
+            </el-tag>
+            <el-tag
+              v-else-if="dockerHealth.cooldown"
+              type="warning"
+              size="small"
+              effect="light"
+              style="margin-left: 12px;"
+            >
+              Docker 刚刚重启（{{ dockerHealth.cooldownRemainingSec }} 秒后开始恢复）
+            </el-tag>
+            <el-tag
+              v-else
+              type="danger"
+              size="small"
+              effect="light"
+              style="margin-left: 12px;"
+            >
+              Docker 未运行 - 正在尝试启动
+            </el-tag>
           </div>
           <div class="header-right">
             <el-switch v-model="autoRefresh" active-text="自动刷新" inactive-text="手动" size="small" />
@@ -99,7 +127,7 @@
             <span v-else style="color: #999;">-</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column label="操作" width="210" fixed="right">
           <template #default="{ row }">
             <el-button
               v-if="row.status === 'restoring'"
@@ -119,6 +147,26 @@
                 恢复
               </el-button>
               <span class="countdown">将自动恢复</span>
+            </template>
+            <template v-else-if="row.status === 'waiting_docker'">
+              <el-button
+                type="info"
+                size="small"
+                disabled
+              >
+                等待Docker
+              </el-button>
+              <span class="countdown">{{ dockerHealth.message }}</span>
+            </template>
+            <template v-else-if="row.status === 'restore_failed'">
+              <el-button
+                type="danger"
+                size="small"
+                @click="handleRestore(row)"
+              >
+                手动恢复
+              </el-button>
+              <span class="countdown">自动恢复失败3次</span>
             </template>
             <el-button
               v-else-if="row.status === 'processing'"
@@ -208,7 +256,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch, nextTick, onActivated } from 'vue'
+import { ref, computed, reactive, onMounted, onUnmounted, watch, nextTick, onActivated } from 'vue'
 import { Monitor, Refresh, Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { imageSnapshotApi } from '../api/imageSnapshot'
@@ -224,6 +272,14 @@ const selectedRows = ref([])
 const showCacheData = ref(false)
 const tableRef = ref(null)
 const cacheTimestamp = ref(0)
+// Docker 运行状态：running / down / recovering (冷却期)
+const dockerHealth = reactive({
+  running: true,
+  cooldown: false,
+  cooldownRemainingSec: 0,
+  status: 'unknown',
+  message: '检查中...'
+})
 let refreshTimer = null
 let refreshDelayTimer = null
 let resumeTimer = null
@@ -263,6 +319,8 @@ const getStatusType = (status) => {
     case 'missing': return 'danger'
     case 'restoring': return 'warning'
     case 'processing': return 'warning'
+    case 'waiting_docker': return 'info'
+    case 'restore_failed': return 'danger'
     default: return 'info'
   }
 }
@@ -273,6 +331,8 @@ const getStatusText = (status) => {
     case 'missing': return '缺失'
     case 'restoring': return '恢复中'
     case 'processing': return '正在备份'
+    case 'waiting_docker': return '等待Docker就绪'
+    case 'restore_failed': return '恢复失败-请手动'
     default: return '未知'
   }
 }
@@ -350,7 +410,28 @@ const saveToCache = () => {
   }
 }
 
+const loadDockerHealth = async () => {
+  try {
+    const res = await imageSnapshotApi.getDockerHealth()
+    if (res.code === 200) {
+      Object.assign(dockerHealth, {
+        running: res.data.running,
+        cooldown: res.data.cooldown,
+        cooldownRemainingSec: res.data.cooldownRemainingSec,
+        status: res.data.status,
+        message: res.data.message
+      })
+    }
+  } catch (e) {
+    dockerHealth.running = false
+    dockerHealth.message = 'Docker 状态检查失败'
+  }
+}
+
 const loadData = async (forceRefresh = false) => {
+  // 1. 先加载 Docker 状态（快速接口）
+  await loadDockerHealth()
+
   // 如果不是强制刷新，且缓存有效，直接使用缓存
   if (!forceRefresh && cacheTimestamp.value > 0) {
     const elapsed = Date.now() - cacheTimestamp.value
@@ -370,7 +451,23 @@ const loadData = async (forceRefresh = false) => {
       imageSnapshotApi.getLogs()
     ])
     if (statusRes.code === 200) {
-      images.value = statusRes.data
+      // ======== 处理中状态保护：后端返回 normal 但本地知道正在备份时，保留 processing ========
+      // 注意：对于 restoring 状态，信任后端的 normal 状态（后端已确认镜像在 Docker 中）
+      const processingLocal = new Set()
+      for (const img of images.value) {
+        if (img.status === 'processing') processingLocal.add(img.fullName)
+      }
+
+      const newImages = statusRes.data
+      for (const img of newImages) {
+        // 本地标记为 processing 但后端说 normal + hasBackup=false → 保留 processing（备份还在跑）
+        if (processingLocal.has(img.fullName) && img.status === 'normal' && !img.hasBackup) {
+          img.status = 'processing'
+        }
+        // restoring 状态：信任后端返回的 normal（后端已确认镜像实际存在于 Docker 中）
+        // 不保留本地的 restoring，避免恢复成功后前端仍显示"恢复中"
+      }
+      images.value = newImages
     }
     if (logsRes.code === 200) {
       logs.value = logsRes.data.logs || []
@@ -490,10 +587,18 @@ const handleBackup = async (row) => {
     if (res.code === 200) {
       ElMessage.success(res.message || '备份任务已提交，请等待后台执行')
     } else {
+      // 后端拒绝（幂等性检查失败）：撤销本地 processing 标记
+      if (index !== -1) {
+        images.value[index].status = 'normal'
+      }
       ElMessage.error(res.message || '备份提交失败')
-      await loadData(true)
     }
   } catch (e) {
+    // 异常时也撤销本地 processing 标记
+    const index = images.value.findIndex(img => img.fullName === row.fullName)
+    if (index !== -1) {
+      images.value[index].status = 'normal'
+    }
     ElMessage.error('操作失败')
   }
 }
@@ -717,7 +822,18 @@ const startAutoRefresh = () => {
     resumeTimer = null
   }
   if (autoRefresh.value && selectedRows.value.length === 0) {
-    refreshTimer = setInterval(() => loadData(true), 15000)
+    // 混合刷新模式：每5秒检查一次 Docker 健康状态，每15秒做一次完整数据刷新
+    // 避免频繁切换页面时触发太多后端恢复操作
+    let tickCount = 0
+    refreshTimer = setInterval(async () => {
+      tickCount++
+      // 先做轻量 Docker 状态检查（快速，不触发恢复）
+      await loadDockerHealth()
+      // 每第3次 (15s) 做完整数据刷新
+      if (tickCount % 3 === 0) {
+        loadData(true)
+      }
+    }, 5000)
   }
 }
 
@@ -727,17 +843,20 @@ watch(searchText, () => {
 })
 
 onMounted(() => {
-  // 进入页面后先尝试从缓存加载，然后立即从后端刷新最新状态
   loadFromCache()
-  // 立即强制刷新后端数据，确保获取最新镜像状态
   loadData(true)
   startAutoRefresh()
 })
 
 onActivated(() => {
-  // 页面激活时，立即从后端获取最新数据
+  // 页面激活时：先显示缓存 + 轻量 Docker 健康检查，避免频繁切换页面时触发大量后端操作
   loadFromCache()
-  loadData(true)
+  loadDockerHealth()
+  // 如果缓存超过 15 秒才做一次完整刷新，避免用户在页面之间切换时反复触发恢复
+  const elapsed = Date.now() - cacheTimestamp.value
+  if (cacheTimestamp.value === 0 || elapsed > 15000) {
+    loadData(true)
+  }
   startAutoRefresh()
 })
 
