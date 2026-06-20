@@ -1,0 +1,52 @@
+server:
+  port: 9090
+  servlet:
+    context-path: /api
+
+spring:
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 1GB
+      max-request-size: 1GB
+  datasource:
+    url: jdbc:mysql://192.168.10.114:3306/jupyterhub_chat?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: 1253586503zyh
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+#spring:
+#  servlet:
+#    multipart:
+#      enabled: true
+#      max-file-size: 1GB
+#      max-request-size: 1GB
+#  datasource:
+#    url: jdbc:mysql://localhost:3306/jupyterhub_chat?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+#    username: root
+#    password: 1253586503zyh
+#    driver-class-name: com.mysql.cj.jdbc.Driver
+#  sql:
+#    init:
+#      mode: always
+#      schema-locations: classpath:schema.sql
+jupyterhub:
+  host: 192.168.10.101
+  port: 22
+  username: huawei
+  password: huawei@2022
+  data-dir: /opt/jupyterhub_prod/data/users/
+  shared-dir: /opt/jupyterhub_prod/data/shared/
+  container-prefix: jupyter-
+  student-range: 1-60
+  network-interface:
+
+file:
+  upload:
+    allowed-extensions: txt,doc,docx,xls,xlsx,pdf,zip,ppt,pptx
+logging:
+  level:
+    com.jupyterhub: INFO

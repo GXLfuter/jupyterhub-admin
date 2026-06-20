@@ -1,0 +1,20 @@
+[Unit]
+Description=JupyterHub Admin Frontend Service (Vite Dev Server)
+After=network.target jupyterhub-admin-backend.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/jupyterhub_project/jupyterhub-admin/frontend
+ExecStart=/usr/bin/npm run dev -- --host 0.0.0.0 --port 9091
+StandardOutput=append:/opt/jupyterhub_project/logs/frontend.log
+StandardError=append:/opt/jupyterhub_project/logs/frontend-error.log
+Restart=always
+RestartSec=5
+Environment="PATH=/usr/local/bin:/usr/bin:/bin"
+Environment="NODE_ENV=production"
+Environment="LANG=en_US.UTF-8"
+Environment="LC_ALL=en_US.UTF-8"
+
+[Install]
+WantedBy=multi-user.target
