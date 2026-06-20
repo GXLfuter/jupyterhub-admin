@@ -1,0 +1,53 @@
+# =============================================
+# JupyterHub Admin - 生产环境配置
+# 可通过环境变量覆盖:
+#   DB_URL      - 数据库连接 (如: jdbc:mysql://192.168.10.101:3306/jupyterhub_chat)
+#   DB_USERNAME - 数据库用户名
+#   DB_PASSWORD - 数据库密码
+#   SSH_HOST    - SSH 服务器地址
+#   SSH_USER    - SSH 用户名
+#   SSH_PASS    - SSH 密码
+#   SERVER_PORT - 后端端口 (默认 9090)
+# =============================================
+
+server:
+  port: ${SERVER_PORT:9090}
+  servlet:
+    context-path: /api
+
+spring:
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 1GB
+      max-request-size: 1GB
+  datasource:
+    url: ${DB_URL:jdbc:mysql://192.168.10.101:3306/jupyterhub_chat?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:Hsj@2024}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+
+jupyterhub:
+  host: ${SSH_HOST:192.168.10.101}
+  port: 22
+  username: ${SSH_USER:huawei}
+  password: ${SSH_PASS:huawei@2022}
+  data-dir: /opt/jupyterhub_prod/data/users/
+  shared-dir: /opt/jupyterhub_prod/data/shared/
+  container-prefix: jupyter-
+  student-range: 1-60
+
+file:
+  upload:
+    allowed-extensions: txt,doc,docx,xls,xlsx,pdf,zip,ppt,pptx
+
+logging:
+  level:
+    com.jupyterhub: INFO
+    org.springframework: WARN
+  file:
+    name: /opt/jupyterhub_project/logs/application.log
