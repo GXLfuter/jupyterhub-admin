@@ -33,10 +33,23 @@ public class ImageSnapshotService {
     private static final int MAX_AUTO_RESTORE_FAILURES = 3;
     // "restoring"状态超时：10分钟还没完成算失败
     private static final long RESTORING_STATE_TIMEOUT_MS = 10 * 60 * 1000L;
+    // getImageStatus 结果缓存时间：3秒内重复请求直接返回缓存，避免前端频繁刷新压垮 SSH
+    private static final long STATUS_CACHE_TTL_MS = 3000L;
 
     private volatile long dockerLastRestartAt = 0L;     // Docker最近一次重启时间
     private volatile long dockerLastHealthCheckAt = 0L;  // Docker最近一次健康检查时间
     private volatile String dockerLastHealthState = "unknown"; // running|down|recovering
+
+    // getImageStatus 结果缓存
+    private volatile List<Map<String, Object>> statusCache = null;
+    private volatile long statusCacheAt = 0L;
+
+    // 清除所有缓存（操作后调用，确保下次请求获取最新数据）
+    private void invalidateAllCaches() {
+        dockerLastHealthCheckAt = 0L;
+        statusCache = null;
+        statusCacheAt = 0L;
+    }
 
     // ==================== 原有配置 ====================
     // 关键镜像（系统自动恢复）及其固定备份文件名
@@ -181,9 +194,14 @@ public class ImageSnapshotService {
         // 先清理超时的 restoring 状态
         cleanupStuckRestoringStates();
 
-        // 强制刷新 Docker 健康状态（忽略 10 秒缓存）
-        // 这样当 Docker 停掉时，前端能实时显示「等待Docker就绪」
-        dockerLastHealthCheckAt = 0L;
+        // ========== 缓存检查：3秒内重复请求直接返回缓存 ==========
+        long now = System.currentTimeMillis();
+        if (statusCache != null && now - statusCacheAt < STATUS_CACHE_TTL_MS) {
+            return statusCache;
+        }
+
+        // 注意：不再强制刷新 Docker 健康状态，让 10 秒缓存生效
+        // 只有定时任务或手动操作后才强制刷新
 
         scanBackupFiles();
         List<Map<String, Object>> images = new ArrayList<>();
@@ -191,8 +209,9 @@ public class ImageSnapshotService {
         // ============== Docker 状态检查 ==============
         boolean dockerOK = isDockerRunning();
         boolean inCooldown = isInDockerCooldown();
-        // 如果 Docker 不在运行，所有"缺失"镜像都应显示为等待状态，而非真正的"缺失"
-        // 如果 Docker 在冷却期（刚重启30秒内），也显示等待状态
+
+        // ========== 一次性获取所有备份文件的元信息（只执行1次SSH命令）==========
+        Map<String, String[]> backupInfoMap = getAllBackupFileInfo();
 
         // 1. 扫描所有 docker 镜像（Docker正常时才查）
         Set<String> existingImages = new HashSet<>();
@@ -227,17 +246,16 @@ public class ImageSnapshotService {
                         if (backupFile == null && isCritical) {
                             backupFile = CRITICAL_IMAGES.get(fullName);
                         }
-                        boolean hasBackup = backupFile != null && checkBackupExists(backupFile);
+                        // 使用缓存的备份文件信息，不再单独执行 SSH 命令
+                        boolean hasBackup = backupFile != null && backupInfoMap.containsKey(backupFile);
                         image.put("hasBackup", hasBackup);
                         image.put("backupPath", hasBackup ? BACKUP_DIR + backupFile : "");
-                        image.put("snapshotTime", hasBackup ? getSnapshotTime(backupFile) : "");
+                        String[] bin = backupInfoMap.get(backupFile);
+                        image.put("snapshotTime", hasBackup && bin != null ? bin[1] : "");
 
                         // 正在恢复 / 正在备份的优先显示对应状态
                         String cachedStatus = imageStatusCache.get(fullName);
                         if ("restoring".equals(cachedStatus)) {
-                            // 关键修复：如果镜像已经在 Docker 中了，说明恢复实际完成了
-                            // （可能是服务器上之前的 docker load 进程完成的）
-                            // 把缓存状态更新为 normal，释放锁
                             imageStatusCache.put(fullName, "normal");
                             restoringStartAt.remove(fullName);
                             restoringImages.remove(fullName);
@@ -261,9 +279,7 @@ public class ImageSnapshotService {
             if (info == null) continue;
 
             String fullName = info[0];
-            // Docker 正常时：已经有的就跳过
             if (dockerOK && existingImages.contains(fullName)) continue;
-            // Docker 不正常时：所有备份都可能"缺失"，但我们标记为 waiting 而非 missing
 
             String repo = info[1];
             String tag = info[2];
@@ -277,16 +293,16 @@ public class ImageSnapshotService {
             image.put("isCritical", CRITICAL_IMAGES.containsKey(fullName));
             image.put("hasBackup", true);
             image.put("backupPath", BACKUP_DIR + fileName);
-            image.put("snapshotTime", getSnapshotTime(fileName));
+            // 使用缓存的备份信息
+            String[] bin = backupInfoMap.get(fileName);
+            image.put("snapshotTime", bin != null ? bin[1] : "");
 
-            // 根据 Docker 状态和缓存决定显示什么
             String cachedStatus = imageStatusCache.get(fullName);
             if ("restoring".equals(cachedStatus)) {
                 image.put("status", "restoring");
             } else if ("restore_failed".equals(cachedStatus)) {
                 image.put("status", "restore_failed");
             } else if (!dockerOK || inCooldown) {
-                // Docker 不在运行或刚重启，显示为"等待Docker"
                 image.put("status", "waiting_docker");
                 imageStatusCache.put(fullName, "waiting_docker");
             } else {
@@ -314,6 +330,10 @@ public class ImageSnapshotService {
             return aName.compareTo(bName);
         });
 
+        // 更新结果缓存
+        statusCache = images;
+        statusCacheAt = System.currentTimeMillis();
+
         return images;
     }
 
@@ -330,6 +350,40 @@ public class ImageSnapshotService {
             return output.trim();
         }
         return "";
+    }
+
+    // 一次性获取所有备份文件的元信息（文件名 -> [大小, 修改时间]）
+    // 只执行一次 SSH 命令，替代每个文件单独 stat/ls
+    private Map<String, String[]> getAllBackupFileInfo() {
+        Map<String, String[]> result = new HashMap<>();
+        String command = "ls -l --time-style=long-iso " + BACKUP_DIR + "*.tar 2>/dev/null";
+        String output = sshService.executeShortCommand(command, true);
+        if (output == null || output.isEmpty()) {
+            return result;
+        }
+        String[] lines = output.split("\n");
+        for (String line : lines) {
+            line = line.trim();
+            if (line.isEmpty() || line.startsWith("total")) continue;
+            // ls -l 格式: -rw-r--r-- 1 root root  12345 2025-01-20 15:30 filename.tar
+            String[] parts = line.split("\\s+");
+            if (parts.length >= 7) {
+                String fileName = parts[parts.length - 1];
+                String size = parts[4];
+                String date = parts[5] + " " + parts[6];
+                // 把大小转成人类可读的（可选）
+                String sizeReadable = formatSize(Long.parseLong(size));
+                result.put(fileName, new String[]{sizeReadable, date});
+            }
+        }
+        return result;
+    }
+
+    private String formatSize(long bytes) {
+        if (bytes < 1024) return bytes + "B";
+        if (bytes < 1024 * 1024) return String.format("%.1fkB", bytes / 1024.0);
+        if (bytes < 1024 * 1024 * 1024) return String.format("%.1fMB", bytes / (1024.0 * 1024));
+        return String.format("%.1fGB", bytes / (1024.0 * 1024 * 1024));
     }
 
     /**
@@ -475,7 +529,7 @@ public class ImageSnapshotService {
             sshService.executeShortCommand("systemctl start docker.service 2>&1", true);
             Thread.sleep(5000);
 
-            dockerLastHealthCheckAt = 0L; // 强制重新检查
+            invalidateAllCaches(); // Docker重启后清除所有缓存
             if (isDockerRunning()) {
                 dockerLastRestartAt = System.currentTimeMillis();
                 appendLog("Docker 重启成功，进入 " + (DOCKER_RECOVERY_COOLDOWN_MS / 1000) + " 秒冷却期");
@@ -486,7 +540,7 @@ public class ImageSnapshotService {
             sshService.executeShortCommand("systemctl start docker 2>&1", true);
             Thread.sleep(5000);
 
-            dockerLastHealthCheckAt = 0L;
+            invalidateAllCaches();
             if (isDockerRunning()) {
                 dockerLastRestartAt = System.currentTimeMillis();
                 appendLog("Docker 重启成功 (systemctl start docker)，进入冷却期");
