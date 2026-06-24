@@ -246,12 +246,19 @@ public class ImageSnapshotService {
                         if (backupFile == null && isCritical) {
                             backupFile = CRITICAL_IMAGES.get(fullName);
                         }
-                        // 使用缓存的备份文件信息，不再单独执行 SSH 命令
-                        boolean hasBackup = backupFile != null && backupInfoMap.containsKey(backupFile);
+                        // scanBackupFiles 已经通过 ls 确认了文件存在，能找到就说明有备份
+                        // 用 backupInfoMap 获取大小和时间，但存在性只需要 backupFile != null
+                        boolean hasBackup = backupFile != null;
+                        if (hasBackup) {
+                            // 再验证一下：如果 backupInfoMap 里没有，可能是新文件没被 scan 到，再检查一次
+                            if (!backupInfoMap.containsKey(backupFile)) {
+                                hasBackup = checkBackupExists(backupFile);
+                            }
+                        }
                         image.put("hasBackup", hasBackup);
                         image.put("backupPath", hasBackup ? BACKUP_DIR + backupFile : "");
                         String[] bin = backupInfoMap.get(backupFile);
-                        image.put("snapshotTime", hasBackup && bin != null ? bin[1] : "");
+                        image.put("snapshotTime", hasBackup && bin != null ? bin[1] : (hasBackup ? getSnapshotTime(backupFile) : ""));
 
                         // 正在恢复 / 正在备份的优先显示对应状态
                         String cachedStatus = imageStatusCache.get(fullName);
@@ -347,7 +354,13 @@ public class ImageSnapshotService {
         String command = "stat -c %y " + BACKUP_DIR + backupFile + " 2>/dev/null | cut -d' ' -f1,2";
         String output = sshService.executeShortCommand(command, true);
         if (output != null && !output.isEmpty() && !output.startsWith("ERROR")) {
-            return output.trim();
+            String date = output.trim();
+            // 去掉小数点后和时区，只保留到秒
+            int dotIndex = date.indexOf('.');
+            if (dotIndex > 0) {
+                date = date.substring(0, dotIndex);
+            }
+            return date;
         }
         return "";
     }
@@ -356,7 +369,8 @@ public class ImageSnapshotService {
     // 只执行一次 SSH 命令，替代每个文件单独 stat/ls
     private Map<String, String[]> getAllBackupFileInfo() {
         Map<String, String[]> result = new HashMap<>();
-        String command = "ls -l --time-style=long-iso " + BACKUP_DIR + "*.tar 2>/dev/null";
+        // 一条 stat 命令获取所有 tar 文件信息，格式：完整路径|字节数|YYYY-MM-DD HH:MM:SS（去掉时区）
+        String command = "stat -c \"%n|%s|%y\" " + BACKUP_DIR + "*.tar 2>/dev/null | head -100";
         String output = sshService.executeShortCommand(command, true);
         if (output == null || output.isEmpty()) {
             return result;
@@ -364,15 +378,26 @@ public class ImageSnapshotService {
         String[] lines = output.split("\n");
         for (String line : lines) {
             line = line.trim();
-            if (line.isEmpty() || line.startsWith("total")) continue;
-            // ls -l 格式: -rw-r--r-- 1 root root  12345 2025-01-20 15:30 filename.tar
-            String[] parts = line.split("\\s+");
-            if (parts.length >= 7) {
-                String fileName = parts[parts.length - 1];
-                String size = parts[4];
-                String date = parts[5] + " " + parts[6];
-                // 把大小转成人类可读的（可选）
-                String sizeReadable = formatSize(Long.parseLong(size));
+            if (line.isEmpty()) continue;
+            String[] parts = line.split("\\|");
+            if (parts.length >= 3) {
+                // parts[0] 是完整路径，提取文件名
+                String fullPath = parts[0].trim();
+                String fileName = fullPath.substring(fullPath.lastIndexOf('/') + 1);
+                long bytes;
+                try {
+                    bytes = Long.parseLong(parts[1].trim());
+                } catch (NumberFormatException e) {
+                    continue;
+                }
+                // 时间格式: 2026-06-20 14:15:53.695081480 +0800
+                // 去掉小数点后和时区，只保留到秒
+                String date = parts[2].trim();
+                int dotIndex = date.indexOf('.');
+                if (dotIndex > 0) {
+                    date = date.substring(0, dotIndex);
+                }
+                String sizeReadable = formatSize(bytes);
                 result.put(fileName, new String[]{sizeReadable, date});
             }
         }
