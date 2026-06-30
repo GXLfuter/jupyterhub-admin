@@ -77,9 +77,7 @@ public class FileController {
         }
     }
 
-    /**
-     * 批量删除文件
-     */
+
     @PostMapping("/delete/batch")
     public Result deleteFiles(@RequestBody Map<String, List<String>> params) {
         List<String> paths = params.get("paths");
