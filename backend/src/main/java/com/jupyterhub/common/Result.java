@@ -1,11 +1,12 @@
+package com.jupyterhub.common;
+
+import java.util.HashMap;
+
+
 /*
  * 作者：nailong
  * 时间：2026/6/12
  */
-
-package com.jupyterhub.common;
-
-import java.util.HashMap;
 
 public class Result extends HashMap<String, Object> {
 
