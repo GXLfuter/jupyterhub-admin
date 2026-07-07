@@ -1,10 +1,12 @@
+/*
+ * 作者：nailong
+ * 时间：2026/6/12
+ */
+
 package com.jupyterhub.common;
 
 import java.util.HashMap;
 
-/**
- * 统一返回结果
- */
 public class Result extends HashMap<String, Object> {
 
     private static final long serialVersionUID = 1L;

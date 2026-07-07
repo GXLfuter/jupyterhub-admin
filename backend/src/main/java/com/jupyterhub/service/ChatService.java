@@ -1,3 +1,8 @@
+/*
+ * 作者：nailong
+ * 时间：2026/6/12
+ */
+
 package com.jupyterhub.service;
 
 import com.jupyterhub.model.ChatMessage;
@@ -23,17 +28,12 @@ public class ChatService {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
-    // 消息类型常量
     public static final String MESSAGE_TYPE_TEXT = "TEXT";
     public static final String MESSAGE_TYPE_HAND_RAISE = "HAND_RAISE";
 
-    // 设置键常量
     public static final String SETTING_GROUP_CHAT_ENABLED = "group_chat_enabled";
     public static final String SETTING_PRIVATE_CHAT_ENABLED = "private_chat_enabled";
 
-    /**
-     * 发送消息
-     */
     public ChatMessage sendMessage(ChatMessage message) {
         String sql = "INSERT INTO chat_message (sender, receiver, content, message_type, attachments, is_group, is_read, created_at) " +
                      "VALUES (?, ?, ?, ?, ?, ?, ?, NOW())";
@@ -47,16 +47,13 @@ public class ChatService {
             0
         );
 
-        // 获取刚插入的消息ID
         Long messageId = jdbcTemplate.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
 
-        // 更新未读计数
         updateUnreadCount(message);
 
         message.setId(messageId);
         message.setCreatedAt(LocalDateTime.now());
 
-        // 通过WebSocket推送消息
         try {
             if (message.getIsGroup() != null && message.getIsGroup()) {
                 com.jupyterhub.handler.ChatWebSocketHandler.broadcastMessage(message);
@@ -72,21 +69,18 @@ public class ChatService {
         return message;
     }
 
-    /**
-     * 更新未读计数
-     */
     private void updateUnreadCount(ChatMessage message) {
         if (message.getIsGroup() != null && message.getIsGroup()) {
             String sql = "INSERT INTO chat_unread_count (username, sender, unread_count, last_message_id, updated_at) " +
                         "VALUES (?, ?, 1, ?, NOW()) " +
                         "ON DUPLICATE KEY UPDATE unread_count = unread_count + 1, last_message_id = VALUES(last_message_id), updated_at = NOW()";
-            
+
             String sender = message.getSender();
-            
+
             if (!sender.startsWith("admin")) {
                 jdbcTemplate.update(sql, "admin", "群聊", message.getId());
             }
-            
+
             for (int i = 1; i <= 60; i++) {
                 String studentName = "student" + i;
                 if (!sender.equals(studentName) && !sender.startsWith(studentName)) {
@@ -103,9 +97,6 @@ public class ChatService {
         }
     }
 
-    /**
-     * 获取与指定用户的所有消息（私信）
-     */
     public List<ChatMessage> getPrivateMessages(String currentUser, String otherUser, int limit, int offset) {
         String sql = "SELECT * FROM chat_message " +
                     "WHERE is_group = 0 AND (" +
@@ -124,9 +115,6 @@ public class ChatService {
         return messages;
     }
 
-    /**
-     * 获取群聊消息
-     */
     public List<ChatMessage> getGroupMessages(int limit, int offset) {
         String sql = "SELECT * FROM chat_message " +
                     "WHERE is_group = 1 " +
@@ -140,13 +128,9 @@ public class ChatService {
         return messages;
     }
 
-    /**
-     * 获取最新消息列表（用于显示联系人列表）
-     */
     public List<Map<String, Object>> getLatestMessages(String username, int limit) {
         List<Map<String, Object>> result = new ArrayList<>();
 
-        // 查询该用户参与的所有私信对话（双向匹配）
         String sql = "SELECT " +
                     "  CASE WHEN sender = ? OR sender LIKE ? THEN receiver ELSE sender END as other_user, " +
                     "  MAX(id) as last_msg_id, MAX(created_at) as last_time " +
@@ -185,7 +169,6 @@ public class ChatService {
             existingUsers.add(otherUser);
         }
 
-        // 添加群聊
         String groupSql = "SELECT MAX(id) as last_msg_id, MAX(created_at) as last_time FROM chat_message WHERE is_group = 1";
         try {
             Map<String, Object> groupRow = jdbcTemplate.queryForMap(groupSql);
@@ -209,21 +192,12 @@ public class ChatService {
         return result;
     }
 
-    /**
-     * 获取消息详情
-     */
     private ChatMessage getMessageById(Long id) {
         String sql = "SELECT * FROM chat_message WHERE id = ?";
         List<ChatMessage> messages = jdbcTemplate.query(sql, new Object[]{id}, new ChatMessageRowMapper());
         return messages.isEmpty() ? null : messages.get(0);
     }
 
-    /**
-     * 清除与指定用户的聊天记录（私信或群聊）
-     * @param username 当前用户
-     * @param targetUser 目标用户（"群聊" 表示群聊，其他表示私信对方）
-     * @return 删除的消息数
-     */
     public int clearChatHistory(String username, String targetUser) {
         int count;
         if ("群聊".equals(targetUser)) {
@@ -239,20 +213,16 @@ public class ChatService {
                 username, targetUser + "-%", targetUser + "-%", username,
                 targetUser, username + "-%", username + "-%", targetUser);
         }
-        
-        // 广播清空事件给所有在线用户
+
         try {
             com.jupyterhub.handler.ChatWebSocketHandler.broadcastClearEvent("one", targetUser);
         } catch (Exception e) {
             logger.error("广播清空事件失败", e);
         }
-        
+
         return count;
     }
 
-    /**
-     * 获取未读消息数
-     */
     public Integer getUnreadCount(String username, String sender) {
         String sql = "SELECT COALESCE(SUM(unread_count), 0) FROM chat_unread_count " +
                     "WHERE (username = ? OR username LIKE ?) AND sender = ?";
@@ -263,17 +233,11 @@ public class ChatService {
         }
     }
 
-    /**
-     * 获取总未读消息数
-     */
     public Integer getTotalUnreadCount(String username) {
         String sql = "SELECT COALESCE(SUM(unread_count), 0) FROM chat_unread_count WHERE username = ? OR username LIKE ?";
         return jdbcTemplate.queryForObject(sql, Integer.class, username, username + "-%");
     }
 
-    /**
-     * 标记消息已读
-     */
     public void markAsRead(String username, String sender) {
         if ("群聊".equals(sender)) {
             String deleteSql = "DELETE FROM chat_unread_count WHERE username = ? OR username LIKE ?";
@@ -292,9 +256,6 @@ public class ChatService {
         }
     }
 
-    /**
-     * 获取所有未读联系人列表
-     */
     public List<Map<String, Object>> getUnreadContacts(String username) {
         String sql = "SELECT sender, unread_count FROM chat_unread_count WHERE username = ? OR username LIKE ? ORDER BY updated_at DESC";
         List<Map<String, Object>> result = new ArrayList<>();
@@ -310,9 +271,6 @@ public class ChatService {
         return result;
     }
 
-    /**
-     * 获取所有学生列表（用于管理界面）
-     */
     public List<Map<String, Object>> getAllStudents() {
         List<Map<String, Object>> result = new ArrayList<>();
         for (int i = 1; i <= 60; i++) {
@@ -321,7 +279,6 @@ public class ChatService {
             item.put("username", studentName);
             item.put("unreadCount", getTotalUnreadCount(studentName));
 
-            // 获取该学生的最新消息
             List<Map<String, Object>> latestMessages = getLatestMessages(studentName, 1);
             if (!latestMessages.isEmpty()) {
                 item.put("lastMessage", latestMessages.get(0).get("lastMessage"));
@@ -333,17 +290,11 @@ public class ChatService {
         return result;
     }
 
-    /**
-     * 获取所有举手消息
-     */
     public List<ChatMessage> getHandRaiseMessages() {
         String sql = "SELECT * FROM chat_message WHERE message_type = ? ORDER BY created_at DESC";
         return jdbcTemplate.query(sql, new Object[]{MESSAGE_TYPE_HAND_RAISE}, new ChatMessageRowMapper());
     }
 
-    /**
-     * 获取聊天设置
-     */
     public Map<String, String> getChatSettings() {
         String sql = "SELECT setting_key, setting_value FROM chat_settings";
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql);
@@ -354,17 +305,11 @@ public class ChatService {
         return settings;
     }
 
-    /**
-     * 更新聊天设置
-     */
     public void updateChatSetting(String key, String value) {
         String sql = "UPDATE chat_settings SET setting_value = ? WHERE setting_key = ?";
         jdbcTemplate.update(sql, value, key);
     }
 
-    /**
-     * 清空聊天记录
-     */
     public void clearChatMessages(String type) {
         if ("all".equals(type)) {
             jdbcTemplate.update("DELETE FROM chat_message");
@@ -373,8 +318,7 @@ public class ChatService {
             jdbcTemplate.update("DELETE FROM chat_message WHERE is_group = 1");
             jdbcTemplate.update("DELETE FROM chat_unread_count");
         }
-        
-        // 广播清空事件给所有在线用户
+
         try {
             com.jupyterhub.handler.ChatWebSocketHandler.broadcastClearEvent(type, null);
         } catch (Exception e) {
@@ -382,9 +326,6 @@ public class ChatService {
         }
     }
 
-    /**
-     * RowMapper for ChatMessage
-     */
     private static class ChatMessageRowMapper implements RowMapper<ChatMessage> {
         @Override
         public ChatMessage mapRow(ResultSet rs, int rowNum) throws SQLException {

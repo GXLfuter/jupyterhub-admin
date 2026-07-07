@@ -1,3 +1,8 @@
+/*
+ * 作者：nailong
+ * 时间：2026/6/12
+ */
+
 package com.jupyterhub.controller;
 
 import com.jupyterhub.common.Result;
@@ -10,9 +15,6 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 
-/**
- * 认证控制器
- */
 @RestController
 @RequestMapping("/auth")
 public class AuthController {
@@ -22,12 +24,11 @@ public class AuthController {
     @Autowired
     private AuthService authService;
 
-    /**
-     * 用户登录
-     */
     @PostMapping("/login")
     public Result login(@RequestBody LoginRequest request) {
+        System.out.println(request.getUsername() + "\n" + request.getPassword());
         Map<String, String> loginInfo = authService.login(request.getUsername(), request.getPassword());
+        System.out.println(loginInfo);
 
         if (loginInfo != null) {
             logger.info("登录成功: {} (角色: {})", request.getUsername(), loginInfo.get("role"));
@@ -38,9 +39,6 @@ public class AuthController {
         return Result.error("用户名或密码错误");
     }
 
-    /**
-     * 验证token
-     */
     @GetMapping("/validate")
     public Result validateToken(@RequestHeader(value = "Authorization", required = false) String token) {
         if (token != null && token.startsWith("Bearer ")) {
@@ -54,9 +52,6 @@ public class AuthController {
         return Result.error(401, "Token无效或已过期");
     }
 
-    /**
-     * 登出
-     */
     @PostMapping("/logout")
     public Result logout(@RequestHeader(value = "Authorization", required = false) String token) {
         if (token != null && token.startsWith("Bearer ")) {

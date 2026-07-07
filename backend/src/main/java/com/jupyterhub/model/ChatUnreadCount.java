@@ -1,10 +1,12 @@
+/*
+ * 作者：nailong
+ * 时间：2026/6/12
+ */
+
 package com.jupyterhub.model;
 
 import java.time.LocalDateTime;
 
-/**
- * 未读消息计数实体类
- */
 public class ChatUnreadCount {
     private Long id;
     private String username;

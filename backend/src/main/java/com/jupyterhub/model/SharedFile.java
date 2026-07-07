@@ -1,8 +1,10 @@
+/*
+ * 作者：nailong
+ * 时间：2026/6/12
+ */
+
 package com.jupyterhub.model;
 
-/**
- * 共享文件信息
- */
 public class SharedFile {
     private String name;
     private String path;

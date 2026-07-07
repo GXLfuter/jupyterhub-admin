@@ -1,10 +1,12 @@
+/*
+ * 作者：nailong
+ * 时间：2026/6/12
+ */
+
 package com.jupyterhub.model;
 
 import java.time.LocalDateTime;
 
-/**
- * 聊天设置实体类
- */
 public class ChatSettings {
     private Long id;
     private String settingKey;

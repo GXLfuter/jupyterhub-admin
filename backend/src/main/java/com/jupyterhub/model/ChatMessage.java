@@ -1,11 +1,13 @@
+/*
+ * 作者：nailong
+ * 时间：2026/6/12
+ */
+
 package com.jupyterhub.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.LocalDateTime;
 
-/**
- * 聊天消息实体类
- */
 public class ChatMessage {
     private Long id;
     private String sender;
@@ -13,10 +15,10 @@ public class ChatMessage {
     private String content;
     private String messageType;
     private String attachments;
-    
+
     @JsonProperty("isGroup")
     private Boolean isGroup;
-    
+
     private Boolean isRead;
     private LocalDateTime createdAt;
     private LocalDateTime readAt;

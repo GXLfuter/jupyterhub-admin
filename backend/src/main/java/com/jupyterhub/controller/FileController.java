@@ -1,3 +1,8 @@
+/*
+ * 作者：nailong
+ * 时间：2026/6/12
+ */
+
 package com.jupyterhub.controller;
 
 import com.jupyterhub.common.Result;
@@ -11,9 +16,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 文件管理控制器
- */
 @RestController
 @RequestMapping("/files")
 public class FileController {
@@ -21,17 +23,11 @@ public class FileController {
     @Autowired
     private FileService fileService;
 
-    /**
-     * 获取文件列表
-     */
     @GetMapping("/list")
     public Result listFiles() {
         return Result.success(fileService.listFiles());
     }
 
-    /**
-     * 上传文件（支持多文件）
-     */
     @PostMapping("/upload")
     public Result uploadFiles(@RequestParam("file") MultipartFile[] files) {
         if (files == null || files.length == 0) {
@@ -63,9 +59,6 @@ public class FileController {
         }
     }
 
-    /**
-     * 删除单个文件
-     */
     @PostMapping("/delete")
     public Result deleteFile(@RequestBody Map<String, String> params) {
         String path = params.get("path");
@@ -76,7 +69,6 @@ public class FileController {
             return Result.error("删除失败");
         }
     }
-
 
     @PostMapping("/delete/batch")
     public Result deleteFiles(@RequestBody Map<String, List<String>> params) {

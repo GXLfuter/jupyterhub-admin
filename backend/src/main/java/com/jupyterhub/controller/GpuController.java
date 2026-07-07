@@ -1,3 +1,8 @@
+/*
+ * 作者：nailong
+ * 时间：2026/6/12
+ */
+
 package com.jupyterhub.controller;
 
 import com.jupyterhub.common.Result;

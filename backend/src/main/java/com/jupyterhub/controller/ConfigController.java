@@ -1,3 +1,8 @@
+/*
+ * 作者：nailong
+ * 时间：2026/6/12
+ */
+
 package com.jupyterhub.controller;
 
 import com.jupyterhub.common.Result;
@@ -7,9 +12,6 @@ import org.springframework.web.bind.annotation.*;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * 系统配置控制器
- */
 @RestController
 @RequestMapping("/config")
 public class ConfigController {
@@ -23,9 +25,6 @@ public class ConfigController {
     @Value("${jupyterhub.shared-dir}")
     private String sharedDir;
 
-    /**
-     * 获取服务器配置
-     */
     @GetMapping
     public Result getConfig() {
         Map<String, Object> config = new HashMap<>();

@@ -3,21 +3,6 @@ server:
   servlet:
     context-path: /api
 
-spring:
-  servlet:
-    multipart:
-      enabled: true
-      max-file-size: 1GB
-      max-request-size: 1GB
-  datasource:
-    url: jdbc:mysql://192.168.10.101:3306/jupyterhub_chat?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
-    username: root
-    password: Hsj@2024
-    driver-class-name: com.mysql.cj.jdbc.Driver
-  sql:
-    init:
-      mode: always
-      schema-locations: classpath:schema.sql
 #spring:
 #  servlet:
 #    multipart:
@@ -25,14 +10,29 @@ spring:
 #      max-file-size: 1GB
 #      max-request-size: 1GB
 #  datasource:
-#    url: jdbc:mysql://localhost:3306/jupyterhub_chat?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+#    url: jdbc:mysql://192.168.10.101:3306/jupyterhub_chat?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
 #    username: root
-#    password: 1253586503zyh
+#    password: Hsj@2024
 #    driver-class-name: com.mysql.cj.jdbc.Driver
 #  sql:
 #    init:
 #      mode: always
 #      schema-locations: classpath:schema.sql
+spring:
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 1GB
+      max-request-size: 1GB
+  datasource:
+    url: jdbc:mysql://localhost:3306/jupyterhub_chat?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: Hsj@2024
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
 jupyterhub:
   host: 192.168.10.101
   port: 22

@@ -1,3 +1,8 @@
+/*
+ * 作者：nailong
+ * 时间：2026/6/12
+ */
+
 package com.jupyterhub.handler;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -40,7 +45,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
-        // Client sends messages via REST API, WebSocket is only for pushing
+
     }
 
     public static void broadcastMessage(ChatMessage message) {
@@ -56,7 +61,6 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
             String username = entry.getKey();
             WebSocketSession session = entry.getValue();
 
-            // 排除发送者自己
             if (message.getSender() != null && message.getSender().equals(username)) {
                 continue;
             }

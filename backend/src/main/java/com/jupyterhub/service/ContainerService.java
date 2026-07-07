@@ -1,3 +1,8 @@
+/*
+ * 作者：nailong
+ * 时间：2026/6/12
+ */
+
 package com.jupyterhub.service;
 
 import com.jupyterhub.model.Container;
@@ -12,9 +17,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 容器管理服务
- */
 @Service
 public class ContainerService {
 
@@ -29,9 +31,6 @@ public class ContainerService {
     @Value("${jupyterhub.data-dir}")
     private String dataDir;
 
-    /**
-     * 获取所有Jupyter容器列表
-     */
     public List<Container> listContainers() {
         List<Container> containers = new ArrayList<>();
 
@@ -39,7 +38,6 @@ public class ContainerService {
             "docker ps -a --filter 'name=" + containerPrefix + "' --format '{{.Names}}|{{.Status}}|{{.Image}}|{{.ID}}|{{.CreatedAt}}|{{.Size}}'"
         );
 
-        // 获取所有学生目录大小
         Map<String, String> directorySizes = getDirectorySizes();
 
         if (result == null || result.isEmpty() || result.startsWith("ERROR")) {
@@ -72,15 +70,13 @@ public class ContainerService {
                 }
 
                 container.setOnline(container.getStatus().toLowerCase().contains("up"));
-                
-                // 设置默认值
+
                 container.setUptime(parseUptime(container.getStatus()));
                 container.setMountCount(4);
                 container.setImageSize("N/A");
                 container.setCpuUsage("N/A");
                 container.setMemoryUsage("N/A");
-                
-                // 设置学生目录大小
+
                 String dirSize = directorySizes.get(container.getUsername());
                 container.setDirectorySize(dirSize != null ? dirSize : "N/A");
 
@@ -90,10 +86,7 @@ public class ContainerService {
 
         return containers;
     }
-    
-    /**
-     * 获取所有学生目录的大小
-     */
+
     private Map<String, String> getDirectorySizes() {
         Map<String, String> sizeMap = new HashMap<>();
         try {
@@ -117,38 +110,31 @@ public class ContainerService {
         }
         return sizeMap;
     }
-    
-    /**
-     * 从状态字符串中解析运行时间，并转换为中文
-     */
+
     private String parseUptime(String status) {
         if (status == null) return "N/A";
-        
+
         try {
             int upIndex = status.indexOf("Up ");
             if (upIndex >= 0) {
                 String upPart = status.substring(upIndex + 3).trim();
-                
+
                 int bracketIndex = upPart.indexOf("(");
                 if (bracketIndex > 0) {
                     upPart = upPart.substring(0, bracketIndex).trim();
                 }
-                
-                // 转换为中文
+
                 return convertToChinese(upPart);
             }
         } catch (Exception e) {
-            // 忽略
+
         }
         return "N/A";
     }
-    
-    /**
-     * 把英文单位转换为中文
-     */
+
     private String convertToChinese(String text) {
         if (text == null) return "N/A";
-        
+
         String result = text;
         result = result.replace("About a ", "1 ");
         result = result.replace("About an ", "1 ");
@@ -162,13 +148,10 @@ public class ContainerService {
         result = result.replace("second", "秒");
         result = result.replace("days", "天");
         result = result.replace("day", "天");
-        
+
         return result;
     }
 
-    /**
-     * 获取在线容器列表
-     */
     public List<Container> listOnlineContainers() {
         List<Container> allContainers = listContainers();
         List<Container> onlineContainers = new ArrayList<>();
@@ -182,9 +165,6 @@ public class ContainerService {
         return onlineContainers;
     }
 
-    /**
-     * 获取指定用户的容器
-     */
     public Container getContainer(String username) {
         String result = sshService.executeCommand(
             "docker ps -a --filter 'name=" + containerPrefix + username + "' --format '{{.Names}}|{{.Status}}|{{.Image}}|{{.ID}}'"
@@ -211,16 +191,13 @@ public class ContainerService {
         return null;
     }
 
-    /**
-     * 删除指定学生的容器
-     */
     public boolean deleteContainer(String username) {
         String containerName = containerPrefix + username;
 
         try {
-            // 停止容器（如果正在运行）
+
             sshService.executeCommand("docker stop " + containerName);
-            // 删除容器
+
             String result = sshService.executeCommand("docker rm " + containerName);
 
             logger.info("删除容器 {}: {}", containerName, result);
@@ -232,16 +209,10 @@ public class ContainerService {
         }
     }
 
-    /**
-     * 清理指定学生的数据
-     * 只保留 shared/ 和 shared_rw/ 这两个文件夹（包括它们里面的所有内容）
-     * 删除其他所有文件和文件夹
-     */
     public boolean cleanupStudentData(String username) {
         try {
             String userDir = dataDir + username;
 
-            // 使用 for 循环删除 shared 和 shared_rw 以外的所有文件和目录
             String cmd = "cd " + userDir + "/ && for item in * .*; do if [ \"$item\" != \".\" ] && [ \"$item\" != \"..\" ] && [ \"$item\" != \"shared\" ] && [ \"$item\" != \"shared_rw\" ]; then rm -rf \"$item\"; fi; done";
             sshService.executeCommand(cmd);
 
@@ -254,19 +225,12 @@ public class ContainerService {
         }
     }
 
-    /**
-     * 同时删除容器和数据
-     */
     public boolean deleteContainerAndData(String username) {
         boolean containerDeleted = deleteContainer(username);
         boolean dataDeleted = cleanupStudentData(username);
         return containerDeleted || dataDeleted;
     }
 
-    /**
-     * 清理所有学生数据
-     * 遍历student1-student60，删除每个学生目录下除 shared/ 和 shared_rw/ 以外的所有内容
-     */
     public String cleanupAllStudentData() {
         StringBuilder result = new StringBuilder();
         int successCount = 0;
@@ -276,7 +240,6 @@ public class ContainerService {
                 String username = "student" + i;
                 String userDir = dataDir + username;
 
-                // 使用 for 循环删除 shared 和 shared_rw 以外的所有文件和目录
                 String cmd = "cd " + userDir + "/ && for item in * .*; do if [ \"$item\" != \".\" ] && [ \"$item\" != \"..\" ] && [ \"$item\" != \"shared\" ] && [ \"$item\" != \"shared_rw\" ]; then rm -rf \"$item\"; fi; done";
                 sshService.executeCommand(cmd);
 
@@ -294,9 +257,6 @@ public class ContainerService {
         }
     }
 
-    /**
-     * 获取学生列表（student1到student60）
-     */
     public List<String> getStudentList() {
         List<String> students = new ArrayList<>();
         for (int i = 1; i <= 60; i++) {

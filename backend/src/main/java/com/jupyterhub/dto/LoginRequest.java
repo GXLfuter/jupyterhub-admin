@@ -1,10 +1,12 @@
+/*
+ * 作者：nailong
+ * 时间：2026/6/12
+ */
+
 package com.jupyterhub.dto;
 
 import lombok.Data;
 
-/**
- * 登录请求DTO
- */
 @Data
 public class LoginRequest {
     private String username;

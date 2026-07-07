@@ -1,3 +1,8 @@
+/*
+ * 作者：nailong
+ * 时间：2026/6/12
+ */
+
 package com.jupyterhub.controller;
 
 import com.jupyterhub.common.Result;
@@ -6,9 +11,6 @@ import com.jupyterhub.service.MonitorService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
-/**
- * 服务器监控控制器
- */
 @RestController
 @RequestMapping("/monitor")
 public class MonitorController {
@@ -16,9 +18,6 @@ public class MonitorController {
     @Autowired
     private MonitorService monitorService;
 
-    /**
-     * 获取服务器资源统计
-     */
     @GetMapping("/stats")
     public Result getServerStats() {
         ServerStats stats = monitorService.getServerStats();

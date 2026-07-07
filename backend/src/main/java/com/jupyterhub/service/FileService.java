@@ -1,3 +1,8 @@
+/*
+ * 作者：nailong
+ * 时间：2026/6/12
+ */
+
 package com.jupyterhub.service;
 
 import com.jupyterhub.model.SharedFile;
@@ -13,9 +18,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-/**
- * 文件管理服务
- */
 @Service
 public class FileService {
 
@@ -27,7 +29,6 @@ public class FileService {
     @Value("${jupyterhub.shared-dir}")
     private String sharedDir;
 
-    // 扩展支持的文件类型
     private static final List<String> ALLOWED_EXTENSIONS = Arrays.asList(
         "txt", "doc", "docx", "xls", "xlsx", "pdf", "zip", "ppt", "pptx", "rar", "7z",
         "jpg", "jpeg", "png", "gif", "bmp", "mp4", "avi", "mov", "webm",
@@ -36,14 +37,9 @@ public class FileService {
         "sql", "go", "rs", "rb", "php", "cs", "swift", "kt", "scala", "r"
     );
 
-    /**
-     * 获取共享目录文件列表（不用sudo，直接用huawei用户ls）
-     */
     public List<SharedFile> listFiles() {
         List<SharedFile> files = new ArrayList<>();
 
-        // 不使用sudo，huawei用户可以直接ls这个目录
-        // 设置LC_ALL为UTF-8，确保中文文件名正确显示
         String result = sshService.executeCommand("LC_ALL=en_US.UTF-8 ls -la " + sharedDir, false);
 
         logger.info("ls 命令结果: [{}]", result);
@@ -98,10 +94,6 @@ public class FileService {
         return files;
     }
 
-    /**
-     * 上传文件到共享目录
-     * 先SFTP到huawei临时目录，再sudo mv到shared目录
-     */
     public String uploadFile(MultipartFile multipartFile) {
         if (multipartFile == null || multipartFile.isEmpty()) {
             return "ERROR: 文件为空";
@@ -118,11 +110,10 @@ public class FileService {
         }
 
         try {
-            // 1. 保存到本地临时文件
+
             String tempPath = System.getProperty("java.io.tmpdir") + File.separator + System.currentTimeMillis() + "_" + originalFilename;
             multipartFile.transferTo(new File(tempPath));
 
-            // 2. SFTP上传到huawei临时目录
             String remoteTempPath = "/home/huawei/" + originalFilename;
             boolean uploadOk = sshService.uploadFileToTemp(tempPath, remoteTempPath);
 
@@ -131,12 +122,10 @@ public class FileService {
                 return "ERROR: SFTP上传失败";
             }
 
-            // 3. sudo mv到shared目录
             String remoteFinalPath = sharedDir + originalFilename;
             String mvResult = sshService.executeCommand("mv " + remoteTempPath + " " + remoteFinalPath);
             logger.info("mv结果: {}", mvResult);
 
-            // 4. 删除本地临时文件
             new File(tempPath).delete();
 
             logger.info("文件上传成功: {}", originalFilename);
@@ -148,9 +137,6 @@ public class FileService {
         }
     }
 
-    /**
-     * 删除文件
-     */
     public boolean deleteFile(String filepath) {
         try {
             String result = sshService.executeCommand("rm -rf " + filepath);
