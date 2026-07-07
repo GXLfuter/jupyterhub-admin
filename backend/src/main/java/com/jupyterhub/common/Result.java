@@ -16,6 +16,9 @@ public class Result extends HashMap<String, Object> {
         put("code", 200);
         put("msg", "操作成功");
     }
+    public Result(int code, String msg) {
+        put("code", code);
+    }
 
     public static Result success() {
         return new Result();
